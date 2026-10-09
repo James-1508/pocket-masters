@@ -254,7 +254,6 @@ class Game {
           this.cueBall.isBeingPlaced = false;
           this.cueBall.vel.set(0, 0);
           this.state = 'AIMING';
-          this.rules.ballInHand = false;
           document.getElementById('ball-in-hand-overlay').classList.add('hidden');
           this.showToast('Cue ball placed!');
           this.updateHUD();
@@ -360,7 +359,6 @@ class Game {
           this.cueBall.isBeingPlaced = false;
           this.cueBall.vel.set(0, 0);
           this.state = 'AIMING';
-          this.rules.ballInHand = false;
           document.getElementById('ball-in-hand-overlay').classList.add('hidden');
           this.showToast('Cue ball placed!');
           this.updateHUD();
@@ -541,10 +539,14 @@ class Game {
       this.rerack();
     });
 
-    // Place Cue Ball button
+    // Place Cue Ball button (Ball in Hand only)
     const btnPlaceCue = document.getElementById('btn-place-cue');
     btnPlaceCue.addEventListener('click', () => {
       if (this.rules.mode === 'ai' && this.rules.currentPlayer === 2) return;
+      if (!this.rules.ballInHand && this.state !== 'BALL_IN_HAND' && (!this.cueBall || !this.cueBall.isPotted)) {
+        this.showToast('Ball in hand is only available after a foul!');
+        return;
+      }
       this.enterBallInHandMode();
     });
 
@@ -754,6 +756,9 @@ class Game {
   executeShot(powerPercent) {
     if ((this.state !== 'AIMING' && this.state !== 'PULLBACK') || this.cueBall.isPotted) return;
 
+    this.rules.ballInHand = false;
+    this.updateHUD();
+
     this.state = 'STRIKING';
     const normalizedPower = powerPercent / 100;
     const shotSpeed = 3.0 + normalizedPower * 34.0;
@@ -801,8 +806,10 @@ class Game {
       if (result.foul) {
         Sound.playFoul();
       }
+      this.rules.ballInHand = true;
       this.enterBallInHandMode();
     } else {
+      this.rules.ballInHand = false;
       this.state = 'AIMING';
     }
 
@@ -1485,6 +1492,25 @@ class Game {
             subMsg.textContent = `Target: ${activeSuit.toUpperCase()}S (${rem} remaining)`;
           }
         }
+      }
+    }
+
+    // Place Cue Button: strictly enabled only when player has Ball in Hand
+    const btnPlaceCue = document.getElementById('btn-place-cue');
+    if (btnPlaceCue) {
+      const hasBallInHand = (!!this.rules.ballInHand || this.state === 'BALL_IN_HAND' || (this.cueBall && this.cueBall.isPotted)) && this.state !== 'GAME_OVER';
+      const isAITurn = (this.rules.mode === 'ai' && this.rules.currentPlayer === 2);
+      const isEnabled = hasBallInHand && !isAITurn;
+
+      btnPlaceCue.disabled = !isEnabled;
+      if (isEnabled) {
+        btnPlaceCue.classList.remove('disabled');
+        btnPlaceCue.classList.add('active-bih');
+        btnPlaceCue.title = 'Reposition Cue Ball (Ball in Hand active)';
+      } else {
+        btnPlaceCue.classList.add('disabled');
+        btnPlaceCue.classList.remove('active-bih');
+        btnPlaceCue.title = 'Ball in hand is only available after a foul';
       }
     }
 

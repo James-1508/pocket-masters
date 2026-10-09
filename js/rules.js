@@ -131,6 +131,7 @@ class RulesEngine {
   }
 
   evaluateShot(balls, cueBall) {
+    this.ballInHand = false;
     // Solo Practice Mode
     if (this.mode === 'practice') {
       if (cueBall.isPotted) {
@@ -273,6 +274,7 @@ class RulesEngine {
       this.currentPlayer = opponentPlayer;
       toastMessage = foulText;
     } else {
+      this.ballInHand = false;
       // Current active suit after possible assignment
       const currentSuit = activePlayer === 1 ? this.p1Suit : this.p2Suit;
 

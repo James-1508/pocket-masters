@@ -890,6 +890,27 @@ canvas#poolCanvas {
   border-color: rgba(56, 189, 248, 0.45);
 }
 
+.action-btn:disabled,
+.action-btn.disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  filter: grayscale(0.7);
+}
+
+.action-btn.secondary.active-bih {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.65);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+  animation: bihPulse 1.4s infinite alternate ease-in-out;
+}
+
+@keyframes bihPulse {
+  0% { box-shadow: 0 0 4px rgba(56, 189, 248, 0.2); }
+  100% { box-shadow: 0 0 14px rgba(56, 189, 248, 0.65); border-color: rgba(56, 189, 248, 0.9); }
+}
+
 /* ==========================================================================
    Modals
    ========================================================================== */
