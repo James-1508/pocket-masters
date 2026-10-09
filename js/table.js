@@ -41,10 +41,10 @@ class Table {
     this.playWidth = playWidth;
     this.playHeight = playHeight;
     this.railWidth = 46;
-    this.cornerPocketRadius = 24;
-    this.sidePocketRadius = 21;
-    this.cornerJawCut = 24;
-    this.sideJawCut = 18;
+    this.cornerPocketRadius = 26; // Halfway between original (24) and previous fix (28)
+    this.sidePocketRadius = 23.5; // Halfway between original (21) and previous fix (26)
+    this.cornerJawCut = 26;       // Halfway between original (24) and previous fix (28)
+    this.sideJawCut = 21;         // Halfway between original (18) and previous fix (24)
 
     this.theme = 'classic';
 
@@ -172,10 +172,10 @@ class Table {
     this.centerSpot = new Vector2D(rw + pw * 0.5, rw + ph * 0.5);
   }
 
-  // Check if ball center has entered pocket opening
+  // Check if ball center has entered pocket opening (balanced halfway between strict 0.95 and lenient 1.25)
   checkPocketDrop(ball) {
     for (const pocket of this.pockets) {
-      const dropRadius = pocket.radius * 0.95;
+      const dropRadius = pocket.radius * 1.10;
       if (ball.pos.distSq(pocket.pos) < dropRadius * dropRadius) {
         return pocket;
       }

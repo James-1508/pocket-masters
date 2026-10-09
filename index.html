@@ -84,6 +84,17 @@
           <span>🔄 Rotate phone to landscape for full table view</span>
         </div>
 
+        <!-- Break Speed Radar Banner -->
+        <div id="break-radar" class="break-radar-banner hidden">
+          <div class="radar-content">
+            <span class="radar-icon">⚡</span>
+            <div class="radar-text-group">
+              <span id="radar-speed" class="radar-kmh">43.1 KM/H</span>
+              <span id="radar-desc" class="radar-desc">Break Speed</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Toast Announcement Banner -->
         <div id="toast-banner" class="toast-banner hidden">
           <span id="toast-text">Foul: Scratch!</span>
@@ -95,19 +106,29 @@
         <!-- Mode Switcher -->
         <div class="toolbar-group">
           <label class="group-label">Mode</label>
-          <div class="segmented-control">
-            <button id="mode-2p" class="seg-btn active">Two Player</button>
-            <button id="mode-practice" class="seg-btn">Practice</button>
+          <div class="mode-select-row">
+            <div class="segmented-control">
+              <button id="mode-2p" class="seg-btn active">2-Player</button>
+              <button id="mode-ai" class="seg-btn" title="Play against Computer AI">VS Bot</button>
+              <button id="mode-practice" class="seg-btn">Practice</button>
+            </div>
+            <div id="ai-diff-wrapper" class="ai-diff-wrapper hidden">
+              <select id="ai-diff-select" class="felt-dropdown" title="Computer Bot Difficulty">
+                <option value="easy">Novice</option>
+                <option value="medium" selected>Club</option>
+                <option value="hard">Pro</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Aiming Line Toggle (User Requested Feature) -->
+        <!-- Aiming Guide -->
         <div class="toolbar-group">
           <label class="group-label">Aiming Guide</label>
           <div class="aim-controls-row">
             <button id="btn-toggle-aim" class="toggle-btn active" title="Toggle Target Projection Line (Shortcut: A)">
               <span class="toggle-icon">🎯</span>
-              <span class="toggle-text">Aim Line: <strong>ON</strong></span>
+              <span class="toggle-text">Aim: <strong>ON</strong></span>
               <span class="key-hint">[A]</span>
             </button>
             <div class="aim-nudge-group">
@@ -120,22 +141,24 @@
         <!-- Power Meter & Controls -->
         <div class="toolbar-group power-group">
           <label class="group-label">Power Control</label>
-          <div class="power-bar-wrapper">
-            <div class="power-bar-bg">
-              <div id="power-bar-fill" class="power-bar-fill" style="width: 45%;"></div>
+          <div class="power-controls-row">
+            <div class="power-bar-wrapper">
+              <div class="power-bar-bg">
+                <div id="power-bar-fill" class="power-bar-fill" style="width: 45%;"></div>
+              </div>
+              <input type="range" id="power-slider" min="5" max="100" value="45" title="Shot Power Slider">
+              <span id="power-label" class="power-val">45%</span>
             </div>
-            <input type="range" id="power-slider" min="5" max="100" value="45" title="Shot Power Slider">
-            <span id="power-label" class="power-val">45%</span>
+            <button id="btn-shoot" class="shoot-btn" title="Shoot at set power (or drag cue on table)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Strike</span>
+            </button>
           </div>
-          <button id="btn-shoot" class="shoot-btn" title="Shoot at set power (or drag cue on table)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            <span>Strike</span>
-          </button>
         </div>
 
         <!-- Cue Ball English / Spin Control -->
         <div class="toolbar-group spin-group">
-          <label class="group-label">Cue Ball Spin (English)</label>
+          <label class="group-label">Spin (English)</label>
           <div class="spin-selector" id="spin-widget" title="Click to adjust cue strike point (Top/Back/Sidespin)">
             <div class="spin-ball">
               <div class="spin-crosshair-h"></div>
@@ -146,23 +169,24 @@
           </div>
         </div>
 
-        <!-- Felt Theme & Table Actions -->
-        <div class="toolbar-group">
-          <label class="group-label">Table</label>
+        <!-- Custom Cue Stick & Table Actions -->
+        <div class="toolbar-group gear-group">
+          <label class="group-label">Gear & Table</label>
           <div class="button-row">
-            <select id="felt-select" class="felt-dropdown" title="Change Felt Color">
-              <option value="classic">Classic Green</option>
-              <option value="royal">Tournament Blue</option>
-              <option value="burgundy">Burgundy Red</option>
-              <option value="slate">Midnight Slate</option>
+            <select id="cue-select" class="felt-dropdown" title="Choose Custom Cue Stick Style">
+              <option value="classic" selected>Cue: Classic</option>
+              <option value="carbon">Cue: Carbon</option>
+              <option value="royal">Cue: Royal</option>
+              <option value="flame">Cue: Flame</option>
             </select>
-            <select id="cloth-speed-select" class="felt-dropdown" title="Adjust Felt Friction / Table Speed">
-              <option value="standard" selected>Cloth: Realistic</option>
-              <option value="fast">Cloth: Slick (Fast)</option>
-              <option value="slow">Cloth: Heavy (Slow)</option>
+            <select id="felt-select" class="felt-dropdown" title="Change Felt Color">
+              <option value="classic">Felt: Green</option>
+              <option value="royal">Felt: Blue</option>
+              <option value="burgundy">Felt: Burgundy</option>
+              <option value="slate">Felt: Slate</option>
             </select>
             <button id="btn-rerack" class="action-btn" title="Rerack Balls">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
               <span>Rerack</span>
             </button>
             <button id="btn-place-cue" class="action-btn secondary" title="Reposition Cue Ball (Ball in Hand)">
@@ -245,10 +269,12 @@
   <!-- Scripts -->
   <script src="js/vector.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/particles.js"></script>
   <script src="js/ball.js"></script>
   <script src="js/table.js"></script>
   <script src="js/physics.js"></script>
   <script src="js/rules.js"></script>
+  <script src="js/ai.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>

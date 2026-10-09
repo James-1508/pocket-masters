@@ -160,6 +160,11 @@ class RulesEngine {
     const activeSuit = activePlayer === 1 ? this.p1Suit : this.p2Suit;
     const cueScratched = cueBall.isPotted;
     const eightBallPotted = this.ballsPottedThisShot.some(b => b.number === 8);
+    const wasTableOpen = this.tableOpen;
+
+    // Remaining suit count at start of shot (before balls were potted on this shot)
+    const pottedSuitCount = activeSuit ? this.ballsPottedThisShot.filter(b => b.type === activeSuit).length : 0;
+    const remainingSuitBeforeShot = activeSuit ? (this.getRemainingSuitCount(balls, activeSuit) + pottedSuitCount) : 7;
 
     // 1. Check 8-Ball Pocketed
     if (eightBallPotted) {
@@ -178,16 +183,13 @@ class RulesEngine {
         };
       }
 
-      // Check if player had cleared their suit
-      const remainingSuitBalls = activeSuit ? this.getRemainingSuitCount(balls, activeSuit) : 7;
-
       if (cueScratched) {
         // Scratched on 8-ball = LOSS
         this.gameOver = true;
         this.winner = opponentPlayer;
         this.winReason = `Player ${activePlayer} scratched while potting the 8-ball!`;
         return { foul: true, gameOver: true, winner: this.winner, message: this.winReason };
-      } else if (remainingSuitBalls > 0 || this.tableOpen) {
+      } else if (remainingSuitBeforeShot > 0 || wasTableOpen) {
         // 8-ball potted prematurely = LOSS
         this.gameOver = true;
         this.winner = opponentPlayer;
@@ -212,22 +214,21 @@ class RulesEngine {
     } else if (!this.firstBallHit) {
       isFoul = true;
       foulText = `Foul: Cue ball failed to contact any ball.`;
-    } else if (!this.tableOpen && activeSuit) {
-      const remainingSuitBalls = this.getRemainingSuitCount(balls, activeSuit);
-      if (remainingSuitBalls > 0) {
+    } else if (!wasTableOpen && activeSuit) {
+      if (remainingSuitBeforeShot > 0) {
         // Must hit player's suit first
         if (this.firstBallHit && this.firstBallHit.type !== activeSuit) {
           isFoul = true;
           foulText = `Foul: Hit ${this.firstBallHit.type === '8ball' ? '8-ball' : "opponent's ball"} first.`;
         }
       } else {
-        // Suit is cleared, legal target is 8-ball
+        // Player had ALREADY cleared all suit balls prior to this shot: legal target was 8-ball
         if (this.firstBallHit && this.firstBallHit.number !== 8) {
           isFoul = true;
           foulText = `Foul: Must target 8-ball (hit ball ${this.firstBallHit.number} first).`;
         }
       }
-    } else if (this.tableOpen && !this.isBreakShot) {
+    } else if (wasTableOpen && !this.isBreakShot) {
       // Table is open: hitting 8-ball first is a foul
       if (this.firstBallHit && this.firstBallHit.number === 8) {
         isFoul = true;
@@ -236,7 +237,8 @@ class RulesEngine {
     }
 
     // 3. Assign Suits if Open Table
-    if (this.tableOpen && !this.isBreakShot && !isFoul) {
+    let suitJustAssigned = false;
+    if (wasTableOpen && !this.isBreakShot && !isFoul) {
       const legalPotted = this.ballsPottedThisShot.filter(b => b.number >= 1 && b.number <= 15 && b.number !== 8);
       if (legalPotted.length > 0) {
         const firstPottedSuit = legalPotted[0].type;
@@ -248,6 +250,7 @@ class RulesEngine {
           this.p1Suit = firstPottedSuit === 'solid' ? 'stripe' : 'solid';
         }
         this.tableOpen = false;
+        suitJustAssigned = true;
       }
     }
 
@@ -270,18 +273,30 @@ class RulesEngine {
       this.currentPlayer = opponentPlayer;
       toastMessage = foulText;
     } else {
+      // Current active suit after possible assignment
+      const currentSuit = activePlayer === 1 ? this.p1Suit : this.p2Suit;
+
       // Legal shot: did active player pot at least one of their own balls?
       let pottedOwn = false;
-      if (this.tableOpen) {
-        pottedOwn = this.ballsPottedThisShot.some(b => b.number !== 0 && b.number !== 8);
+      if (wasTableOpen) {
+        // On an open table (break shot or suit-assigning shot), potting any object ball continues turn
+        pottedOwn = this.ballsPottedThisShot.some(b => b.number >= 1 && b.number <= 15 && b.number !== 8);
       } else {
-        pottedOwn = this.ballsPottedThisShot.some(b => b.type === activeSuit);
+        pottedOwn = this.ballsPottedThisShot.some(b => b.type === currentSuit);
       }
 
       if (pottedOwn) {
         // Player potted own ball: continues turn!
         switchTurn = false;
-        toastMessage = `Player ${activePlayer} potted a ball! Continue shooting.`;
+        const remainingNow = currentSuit ? this.getRemainingSuitCount(balls, currentSuit) : 7;
+        if (suitJustAssigned) {
+          const suitName = currentSuit === 'solid' ? 'Solids (1-7)' : 'Stripes (9-15)';
+          toastMessage = `Player ${activePlayer} claimed ${suitName}! Continue shooting.`;
+        } else if (remainingNow === 0 && remainingSuitBeforeShot > 0) {
+          toastMessage = `Player ${activePlayer} cleared their suit! Target the 8-Ball to WIN!`;
+        } else {
+          toastMessage = `Player ${activePlayer} potted a ball! Continue shooting.`;
+        }
       } else {
         // No ball of own suit potted: switch turn
         switchTurn = true;

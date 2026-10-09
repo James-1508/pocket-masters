@@ -254,6 +254,88 @@ class SoundEngine {
       }, delay * 1000);
     });
   }
+
+  // Realistic chalk rubbing sound
+  playChalk() {
+    if (this.muted) return;
+    this.init();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const bufferSize = Math.round(this.ctx.sampleRate * 0.18);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < bufferSize; i++) {
+      // Rough textured friction noise
+      const envelope = Math.sin((i / bufferSize) * Math.PI);
+      data[i] = (Math.random() * 2 - 1) * envelope * 0.7;
+    }
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2800, t);
+    filter.Q.setValueAtTime(2.2, t);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.25, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    noise.start(t);
+  }
+
+  // Explosive rack shatter sound on heavy break shot
+  playHeavyBreak(powerRatio = 1.0) {
+    if (this.muted) return;
+    this.init();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    // Low punch
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(95, t);
+    osc.frequency.exponentialRampToValueAtTime(35, t + 0.15);
+
+    gain.gain.setValueAtTime(0.6 * powerRatio, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.16);
+  }
+
+  // Sub-bass heartbeat pulse for dramatic 8-ball slow motion
+  playHeartbeat() {
+    if (this.muted) return;
+    this.init();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(58, t);
+    osc.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+
+    gain.gain.setValueAtTime(0.45, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.24);
+  }
 }
 
 const Sound = new SoundEngine();

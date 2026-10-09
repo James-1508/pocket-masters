@@ -2,51 +2,20 @@
  * PhysicsEngine - Continuous sub-stepped 2D physics simulation for pool.
  */
 class PhysicsEngine {
-  // Pre-configured cloth speed profiles
-  static CLOTH_PRESETS = {
-    standard: {
-      name: 'Standard (Realistic)',
-      friction: 0.991,      // Smooth glide per frame
-      rollingDecel: 0.017,  // Constant rolling deceleration (allows clean rail-to-rail travel)
-      restitutionCushion: 0.7, // Lively responsive cushion rubber
-      stopThreshold: 0.05
-    },
-    fast: {
-      name: 'Fast (Tournament)',
-      friction: 0.994,
-      rollingDecel: 0.010,
-      restitutionCushion: 0.8,
-      stopThreshold: 0.04
-    },
-    slow: {
-      name: 'Slow (Heavy Felt)',
-      friction: 0.986,
-      rollingDecel: 0.026,
-      restitutionCushion: 0.76,
-      stopThreshold: 0.06
-    }
-  };
-
   constructor(table) {
     this.table = table;
     this.subSteps = 8;
 
-    // Default to realistic standard cloth
-    this.setClothProfile('standard');
+    // Realistic cloth physics profile (calibrated for authentic roll and rail-to-rail travel)
+    this.friction = 0.991;          // Smooth glide per frame
+    this.rollingDecel = 0.017;      // Constant rolling deceleration (allows clean rail-to-rail travel)
+    this.restitutionCushion = 0.7;  // Lively responsive cushion rubber
+    this.stopThreshold = 0.05;
 
-    this.restitutionBall = 0.96; // Ball-to-ball elasticity
+    this.restitutionBall = 0.96;    // Ball-to-ball elasticity
     this.onBallBallCollision = null;
     this.onCushionCollision = null;
     this.onBallPotted = null;
-  }
-
-  setClothProfile(presetKey) {
-    const p = PhysicsEngine.CLOTH_PRESETS[presetKey] || PhysicsEngine.CLOTH_PRESETS.standard;
-    this.clothProfile = presetKey;
-    this.friction = p.friction;
-    this.rollingDecel = p.rollingDecel;
-    this.restitutionCushion = p.restitutionCushion;
-    this.stopThreshold = p.stopThreshold;
   }
 
   // Direct manual adjustment method
@@ -118,15 +87,21 @@ class PhysicsEngine {
         }
       }
 
-      // 3. Ball-to-Cushion Collisions
+      // 3. Pocket Funnel & Drop Check
       for (const b of balls) {
         if (b.isPotted || b.isBeingPlaced) continue;
-        this.resolveBallCushionCollisions(b);
-      }
 
-      // 4. Pocket Drops
-      for (const b of balls) {
-        if (b.isPotted || b.isBeingPlaced) continue;
+        // Apply gentle slate pocket gravity funnel pull (balanced halfway)
+        for (const pocket of this.table.pockets) {
+          const toPocket = Vector2D.sub(pocket.pos, b.pos);
+          const dist = toPocket.mag();
+          const funnelRadius = pocket.radius * 1.28;
+          if (dist < funnelRadius && dist > 1) {
+            const pull = (1 - dist / funnelRadius) * 0.38 * subDt;
+            b.vel.x += (toPocket.x / dist) * pull;
+            b.vel.y += (toPocket.y / dist) * pull;
+          }
+        }
 
         const pocket = this.table.checkPocketDrop(b);
         if (pocket) {
@@ -136,6 +111,12 @@ class PhysicsEngine {
             this.onBallPotted(b, pocket);
           }
         }
+      }
+
+      // 4. Ball-to-Cushion Collisions
+      for (const b of balls) {
+        if (b.isPotted || b.isBeingPlaced) continue;
+        this.resolveBallCushionCollisions(b);
       }
     }
   }
@@ -188,14 +169,30 @@ class PhysicsEngine {
         Sound.playBallHit(Math.abs(velAlongNormal));
 
         if (this.onBallBallCollision) {
-          this.onBallBallCollision(b1, b2);
+          const midX = (b1.pos.x + b2.pos.x) * 0.5;
+          const midY = (b1.pos.y + b2.pos.y) * 0.5;
+          this.onBallBallCollision(b1, b2, midX, midY, Math.abs(velAlongNormal));
         }
       }
     }
   }
 
   resolveBallCushionCollisions(ball) {
-    if (ball.isBeingPlaced) return;
+    if (ball.isBeingPlaced || ball.isPotted) return;
+
+    // Pocket throat grace (balanced halfway): if ball is entering a pocket mouth directly inward, skip sharp cushion corner vertex rejection
+    for (const pocket of this.table.pockets) {
+      const toPocket = Vector2D.sub(pocket.pos, ball.pos);
+      const distSq = toPocket.magSq();
+      const throatRadius = pocket.radius * 1.18;
+      if (distSq < throatRadius * throatRadius) {
+        // If ball is within throat and rolling directly inward toward pocket, skip cushion bounce
+        if (toPocket.dot(ball.vel) > 0.05) {
+          return;
+        }
+      }
+    }
+
     for (const c of this.table.cushions) {
       // Find closest point on line segment p1 -> p2
       const segVx = c.p2.x - c.p1.x;
@@ -250,7 +247,7 @@ class PhysicsEngine {
           Sound.playCushionHit(ball.vel.mag());
 
           if (this.onCushionCollision) {
-            this.onCushionCollision(ball, c);
+            this.onCushionCollision(ball, c, closestX, closestY, nx, ny, Math.abs(vn));
           }
         }
       }

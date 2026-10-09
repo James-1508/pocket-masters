@@ -39,6 +39,14 @@ class Game {
     this.balls = [];
     this.cueBall = null;
 
+    // Advanced additions: Particles, AI Opponent, and Cue styling
+    this.particles = new ParticleSystem(250);
+    this.ai = new AIOpponent(this);
+    this.cueStyle = localStorage.getItem('pocket_masters_cue') || 'classic';
+    this.breakSpeedKmh = 0;
+    this.breakSpeedMph = 0;
+    this.breakRadarTimeout = null;
+
     // Initialize systems
     this.setupCanvas();
     this.initBalls();
@@ -83,16 +91,29 @@ class Game {
   }
 
   setupPhysicsCallbacks() {
-    this.physics.onBallBallCollision = (b1, b2) => {
+    this.physics.onBallBallCollision = (b1, b2, midX, midY, impulse) => {
       this.rules.recordBallCollision(b1, b2);
+      if (impulse > 1.0 && midX !== undefined) {
+        this.particles.createImpactDust(midX, midY, impulse);
+      }
     };
 
-    this.physics.onCushionCollision = (ball, cushion) => {
+    this.physics.onCushionCollision = (ball, cushion, hitX, hitY, nx, ny, impulse) => {
       this.rules.recordCushionCollision(ball);
+      if (impulse > 1.0 && hitX !== undefined) {
+        this.particles.createCushionImpact(hitX, hitY, nx, ny, impulse);
+      }
     };
 
     this.physics.onBallPotted = (ball, pocket) => {
       this.rules.recordBallPotted(ball);
+      this.particles.createPocketRipple(pocket.pos.x, pocket.pos.y);
+
+      // Sinking game-winning 8-ball triggers victory sparks!
+      if (ball.number === 8) {
+        this.particles.createVictorySparks(pocket.pos.x, pocket.pos.y);
+      }
+
       this.updateHUD();
     };
   }
@@ -143,6 +164,9 @@ class Game {
   }
 
   rerack() {
+    if (this.particles) {
+      this.particles.clear();
+    }
     this.rules.reset();
     this.initBalls();
     this.state = 'AIMING';
@@ -161,12 +185,23 @@ class Game {
       this.animFrameId = requestAnimationFrame(this.loop.bind(this));
     }
     this.render();
+
+    // Trigger AI if computer's turn to break
+    if (this.rules.mode === 'ai' && this.rules.currentPlayer === 2) {
+      setTimeout(() => {
+        if (this.rules.mode === 'ai' && this.rules.currentPlayer === 2 && this.state !== 'GAME_OVER') {
+          this.ai.takeTurn();
+        }
+      }, 800);
+    }
   }
 
   // =========================================================================
   // Input & Event Binding
   // =========================================================================
   bindEvents() {
+    const isAITurn = () => this.rules.mode === 'ai' && this.rules.currentPlayer === 2;
+
     const getCanvasPos = (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const scaleX = this.table.width / (rect.width || this.table.width);
@@ -182,6 +217,7 @@ class Game {
 
     // --- Mouse Events ---
     this.canvas.addEventListener('mousemove', (e) => {
+      if (isAITurn()) return;
       this.mouse = getCanvasPos(e);
 
       if (this.state === 'BALL_IN_HAND') {
@@ -210,7 +246,7 @@ class Game {
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return; // Left click only
+      if (e.button !== 0 || isAITurn()) return; // Left click only and not AI turn
       Sound.init();
 
       if (this.state === 'BALL_IN_HAND') {
@@ -248,6 +284,7 @@ class Game {
 
     // --- Touch Events (Mobile & Tablet Support) ---
     this.canvas.addEventListener('touchstart', (e) => {
+      if (isAITurn()) return;
       e.preventDefault();
       Sound.init();
 
@@ -287,6 +324,7 @@ class Game {
     }, { passive: false });
 
     this.canvas.addEventListener('touchmove', (e) => {
+      if (isAITurn()) return;
       e.preventDefault();
       const touchPos = getCanvasPos(e);
       this.mouse = touchPos;
@@ -368,8 +406,16 @@ class Game {
       if (e.key === 'a' || e.key === 'A' || e.key === 'l' || e.key === 'L') {
         this.toggleAimLine();
       }
+      // Rerack: [R]
+      else if (e.key === 'r' || e.key === 'R') {
+        this.rerack();
+        return;
+      }
+
+      if (isAITurn()) return; // Prevent aim nudging and shooting during AI turns
+
       // Strike shortcut: Spacebar
-      else if (e.code === 'Space') {
+      if (e.code === 'Space') {
         e.preventDefault();
         if (this.state === 'AIMING' && this.cueBall && !this.cueBall.isPotted) {
           this.executeShot(this.power);
@@ -380,10 +426,6 @@ class Game {
         this.aimAngle -= 0.015;
       } else if (e.key === 'ArrowRight') {
         this.aimAngle += 0.015;
-      }
-      // Rerack: [R]
-      else if (e.key === 'r' || e.key === 'R') {
-        this.rerack();
       }
     });
   }
@@ -419,6 +461,7 @@ class Game {
     // Shoot button
     const btnShoot = document.getElementById('btn-shoot');
     btnShoot.addEventListener('click', () => {
+      if (this.rules.mode === 'ai' && this.rules.currentPlayer === 2) return;
       if (this.state === 'AIMING' && this.cueBall && !this.cueBall.isPotted) {
         this.executeShot(this.power);
       }
@@ -426,41 +469,71 @@ class Game {
 
     // Mode segmented buttons
     const btn2P = document.getElementById('mode-2p');
+    const btnAI = document.getElementById('mode-ai');
     const btnPractice = document.getElementById('mode-practice');
+    const aiDiffWrapper = document.getElementById('ai-diff-wrapper');
+    const aiDiffSelect = document.getElementById('ai-diff-select');
 
     btn2P.addEventListener('click', () => {
       if (this.rules.mode !== '2player') {
         btn2P.classList.add('active');
+        if (btnAI) btnAI.classList.remove('active');
         btnPractice.classList.remove('active');
+        if (aiDiffWrapper) aiDiffWrapper.classList.add('hidden');
         this.rules.setMode('2player');
         this.rerack();
       }
     });
 
+    if (btnAI) {
+      btnAI.addEventListener('click', () => {
+        if (this.rules.mode !== 'ai') {
+          btnAI.classList.add('active');
+          btn2P.classList.remove('active');
+          btnPractice.classList.remove('active');
+          if (aiDiffWrapper) aiDiffWrapper.classList.remove('hidden');
+          this.rules.setMode('ai');
+          this.rerack();
+        }
+      });
+    }
+
     btnPractice.addEventListener('click', () => {
       if (this.rules.mode !== 'practice') {
         btnPractice.classList.add('active');
         btn2P.classList.remove('active');
+        if (btnAI) btnAI.classList.remove('active');
+        if (aiDiffWrapper) aiDiffWrapper.classList.add('hidden');
         this.rules.setMode('practice');
         this.rerack();
       }
     });
+
+    if (aiDiffSelect) {
+      aiDiffSelect.value = this.ai.difficulty;
+      aiDiffSelect.addEventListener('change', (e) => {
+        this.ai.setDifficulty(e.target.value);
+        this.showToast(`AI Bot Difficulty: ${aiDiffSelect.options[aiDiffSelect.selectedIndex].text}`);
+        this.updateHUD();
+      });
+    }
+
+    // Cue stick dropdown
+    const cueSelect = document.getElementById('cue-select');
+    if (cueSelect) {
+      cueSelect.value = this.cueStyle;
+      cueSelect.addEventListener('change', (e) => {
+        this.cueStyle = e.target.value;
+        localStorage.setItem('pocket_masters_cue', e.target.value);
+        this.showToast(`Equipped: ${cueSelect.options[cueSelect.selectedIndex].text}`);
+      });
+    }
 
     // Felt dropdown
     const feltSelect = document.getElementById('felt-select');
     feltSelect.addEventListener('change', (e) => {
       this.table.setTheme(e.target.value);
     });
-
-    // Cloth Speed / Friction dropdown
-    const clothSelect = document.getElementById('cloth-speed-select');
-    if (clothSelect) {
-      clothSelect.addEventListener('change', (e) => {
-        this.physics.setClothProfile(e.target.value);
-        const preset = PhysicsEngine.CLOTH_PRESETS[e.target.value];
-        this.showToast(`Cloth Friction: ${preset ? preset.name : e.target.value}`);
-      });
-    }
 
     // Rerack button
     const btnRerack = document.getElementById('btn-rerack');
@@ -471,6 +544,7 @@ class Game {
     // Place Cue Ball button
     const btnPlaceCue = document.getElementById('btn-place-cue');
     btnPlaceCue.addEventListener('click', () => {
+      if (this.rules.mode === 'ai' && this.rules.currentPlayer === 2) return;
       this.enterBallInHandMode();
     });
 
@@ -567,11 +641,11 @@ class Game {
     const btn = document.getElementById('btn-toggle-aim');
     if (this.showAimLine) {
       btn.classList.add('active');
-      btn.innerHTML = `<span class="toggle-icon">🎯</span><span class="toggle-text">Aim Line: <strong>ON</strong></span><span class="key-hint">[A]</span>`;
+      btn.innerHTML = `<span class="toggle-icon">🎯</span><span class="toggle-text">Aim: <strong>ON</strong></span><span class="key-hint">[A]</span>`;
       this.showToast('Aiming Guide Enabled');
     } else {
       btn.classList.remove('active');
-      btn.innerHTML = `<span class="toggle-icon">🎯</span><span class="toggle-text">Aim Line: <strong>OFF</strong></span><span class="key-hint">[A]</span>`;
+      btn.innerHTML = `<span class="toggle-icon">🎯</span><span class="toggle-text">Aim: <strong>OFF</strong></span><span class="key-hint">[A]</span>`;
       this.showToast('Aiming Guide Disabled');
     }
   }
@@ -653,6 +727,30 @@ class Game {
   // =========================================================================
   // Shooting & Turn Execution
   // =========================================================================
+  showBreakRadar(kmh) {
+    const radar = document.getElementById('break-radar');
+    const speedEl = document.getElementById('radar-speed') || document.getElementById('radar-mph');
+    const descEl = document.getElementById('radar-desc');
+    if (!radar || !speedEl || !descEl) return;
+
+    speedEl.textContent = `${kmh} KM/H`;
+    if (kmh >= 46.5) {
+      descEl.textContent = 'CRUSHING BREAK! 💥';
+    } else if (kmh >= 38.5) {
+      descEl.textContent = 'POWERFUL BREAK! ⚡';
+    } else if (kmh >= 30.5) {
+      descEl.textContent = 'SOLID BREAK! 🎯';
+    } else {
+      descEl.textContent = 'CONTROLLED BREAK';
+    }
+
+    radar.classList.remove('hidden');
+    if (this.breakRadarTimeout) clearTimeout(this.breakRadarTimeout);
+    this.breakRadarTimeout = setTimeout(() => {
+      radar.classList.add('hidden');
+    }, 3400);
+  }
+
   executeShot(powerPercent) {
     if ((this.state !== 'AIMING' && this.state !== 'PULLBACK') || this.cueBall.isPotted) return;
 
@@ -660,8 +758,21 @@ class Game {
     const normalizedPower = powerPercent / 100;
     const shotSpeed = 3.0 + normalizedPower * 34.0;
 
-    // Strike sound
+    // Break Speed Radar on break shots
+    if (this.rules.isBreakShot) {
+      const kmh = Math.round((((powerPercent / 100) * 22.0 + 9.0 + (Math.random() * 1.6 - 0.8)) * 1.60934) * 10) / 10;
+      this.breakSpeedKmh = kmh;
+      this.breakSpeedMph = Math.round((kmh / 1.60934) * 10) / 10;
+      this.showBreakRadar(kmh);
+      Sound.playHeavyBreak(normalizedPower);
+    }
+
+    // Cue strike sound & chalk puff
     Sound.playCueHit(normalizedPower);
+    Sound.playChalk();
+    if (this.particles) {
+      this.particles.createChalkPuff(this.cueBall.pos.x, this.cueBall.pos.y, this.aimAngle, normalizedPower);
+    }
 
     // Apply impulse to cue ball
     this.cueBall.vel.x = Math.cos(this.aimAngle) * shotSpeed;
@@ -700,6 +811,15 @@ class Game {
     }
 
     this.updateHUD();
+
+    // Trigger AI turn if computer's turn
+    if (this.rules.mode === 'ai' && this.rules.currentPlayer === 2 && this.state !== 'GAME_OVER') {
+      setTimeout(() => {
+        if (this.rules.mode === 'ai' && this.rules.currentPlayer === 2 && this.state !== 'GAME_OVER') {
+          this.ai.takeTurn();
+        }
+      }, 500);
+    }
   }
 
   // =========================================================================
@@ -829,6 +949,11 @@ class Game {
     // 3. Render Balls
     for (const b of this.balls) {
       b.render(ctx);
+    }
+
+    // 3.5 Render Particles (chalk dust, collision sparks, pocket ripples)
+    if (this.particles) {
+      this.particles.render(ctx);
     }
 
     // 4. Render Ball-in-Hand ghost indicator
@@ -1079,20 +1204,96 @@ class Game {
     ctx.fill();
     ctx.restore();
 
+    // Style configs: 'classic' | 'carbon' | 'royal' | 'flame'
+    const style = this.cueStyle || 'classic';
+
+    let tipColor = '#38bdf8';
+    let ferruleColor = '#eab308';
+    let ferruleRingColor = null;
+    let shaftGradStops = [];
+    let wrapStartFrac = 0.62;
+    let wrapEndFrac = 0.86;
+    let wrapColor = '#1e293b';
+    let wrapAccentColor = '#0f172a';
+    let buttCapColor = '#0f172a';
+    let ringColor = '#fbbf24';
+
+    if (style === 'carbon') {
+      tipColor = '#64748b';
+      ferruleColor = '#18181b';
+      ferruleRingColor = '#ef4444';
+      shaftGradStops = [
+        [0, '#1e293b'],
+        [0.4, '#0f172a'],
+        [0.7, '#18181b'],
+        [1.0, '#09090b']
+      ];
+      wrapColor = '#18181b';
+      wrapAccentColor = '#3f3f46';
+      buttCapColor = '#27272a';
+      ringColor = '#ef4444';
+    } else if (style === 'royal') {
+      tipColor = '#2563eb';
+      ferruleColor = '#fbbf24';
+      ferruleRingColor = '#f59e0b';
+      shaftGradStops = [
+        [0, '#f8fafc'],
+        [0.45, '#f1f5f9'],
+        [0.7, '#e2e8f0'],
+        [1.0, '#cbd5e1']
+      ];
+      wrapColor = '#581c87';
+      wrapAccentColor = '#3b0764';
+      buttCapColor = '#eab308';
+      ringColor = '#fbbf24';
+    } else if (style === 'flame') {
+      tipColor = '#dc2626';
+      ferruleColor = '#b45309';
+      ferruleRingColor = '#f97316';
+      shaftGradStops = [
+        [0, '#b91c1c'],
+        [0.35, '#7f1d1d'],
+        [0.7, '#450a0a'],
+        [1.0, '#1c1917']
+      ];
+      wrapColor = '#1c1917';
+      wrapAccentColor = '#f97316';
+      buttCapColor = '#e2e8f0';
+      ringColor = '#fb923c';
+    } else {
+      // Classic Maple
+      tipColor = '#38bdf8';
+      ferruleColor = '#eab308';
+      shaftGradStops = [
+        [0, '#fde68a'],
+        [0.55, '#d97706'],
+        [0.72, '#1e293b'],
+        [1.0, '#0f172a']
+      ];
+      wrapColor = '#1e293b';
+      wrapAccentColor = '#0f172a';
+      buttCapColor = '#0f172a';
+      ringColor = '#f59e0b';
+    }
+
     // 2. Leather Cue Tip
-    ctx.fillStyle = '#38bdf8'; // Blue master chalk tip
+    ctx.fillStyle = tipColor;
     ctx.fillRect(startX, -tipWidth / 2, 4, tipWidth);
 
-    // 3. Brass Ferrule
-    ctx.fillStyle = '#eab308';
+    // 3. Ferrule
+    ctx.fillStyle = ferruleColor;
     ctx.fillRect(startX + 4, -tipWidth / 2, 8, tipWidth);
 
-    // 4. Wooden Shaft & Butt
+    if (ferruleRingColor) {
+      ctx.fillStyle = ferruleRingColor;
+      ctx.fillRect(startX + 10, -tipWidth / 2, 2, tipWidth);
+    }
+
+    // 4. Shaft & Butt base
     const cueGrad = ctx.createLinearGradient(startX + 12, 0, startX + cueLength, 0);
-    cueGrad.addColorStop(0, '#fde68a'); // Maple wood shaft
-    cueGrad.addColorStop(0.55, '#d97706');
-    cueGrad.addColorStop(0.7, '#1e293b'); // Dark composite wrap
-    cueGrad.addColorStop(1, '#0f172a'); // Butt cap
+    for (const [stop, col] of shaftGradStops) {
+      cueGrad.addColorStop(stop, col);
+    }
 
     ctx.beginPath();
     ctx.moveTo(startX + 12, -tipWidth / 2);
@@ -1103,9 +1304,51 @@ class Game {
     ctx.fillStyle = cueGrad;
     ctx.fill();
 
-    // Subtle edge highlight
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    // 5. Textured Irish Linen / Carbon / Royal Velvet Grip Wrap
+    const wrapX1 = startX + cueLength * wrapStartFrac;
+    const wrapX2 = startX + cueLength * wrapEndFrac;
+    const wTip1 = tipWidth + (buttWidth - tipWidth) * wrapStartFrac;
+    const wTip2 = tipWidth + (buttWidth - tipWidth) * wrapEndFrac;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(wrapX1, -wTip1 / 2);
+    ctx.lineTo(wrapX2, -wTip2 / 2);
+    ctx.lineTo(wrapX2, wTip2 / 2);
+    ctx.lineTo(wrapX1, wTip1 / 2);
+    ctx.closePath();
+    ctx.fillStyle = wrapColor;
+    ctx.fill();
+
+    // Grip texture stripes / accents
+    ctx.strokeStyle = wrapAccentColor;
     ctx.lineWidth = 1;
+    for (let gx = wrapX1 + 4; gx < wrapX2 - 4; gx += 8) {
+      ctx.beginPath();
+      ctx.moveTo(gx, -wTip1 / 2);
+      ctx.lineTo(gx + 3, wTip2 / 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 6. Decorative Ring Accents (Joint rings)
+    ctx.fillStyle = ringColor;
+    const ring1X = wrapX1 - 3;
+    const ring2X = wrapX2 + 3;
+    ctx.fillRect(ring1X, -wTip1 / 2 - 0.5, 3, wTip1 + 1);
+    ctx.fillRect(ring2X, -wTip2 / 2 - 0.5, 3, wTip2 + 1);
+
+    // 7. Butt Cap
+    const buttCapX = startX + cueLength - 12;
+    ctx.fillStyle = buttCapColor;
+    ctx.fillRect(buttCapX, -buttWidth / 2, 12, buttWidth);
+
+    // Subtle edge specular highlight along top edge
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(startX, -tipWidth / 2);
+    ctx.lineTo(startX + cueLength, -buttWidth / 2);
     ctx.stroke();
 
     ctx.restore();
@@ -1141,6 +1384,11 @@ class Game {
       // Physics step
       this.physics.update(this.balls, dt);
 
+      // Particle system update
+      if (this.particles) {
+        this.particles.update(dt);
+      }
+
       // Check if shot has finished
       if (this.state === 'SIMULATING') {
         if (!this.physics.areBallsMoving(this.balls)) {
@@ -1167,13 +1415,24 @@ class Game {
 
     // Mode Badge
     const modeBadge = document.getElementById('mode-badge');
-    modeBadge.textContent = r.mode === '2player' ? '2-Player 8-Ball' : 'Solo Practice';
+    if (r.mode === 'ai') {
+      modeBadge.textContent = `VS Computer (${this.ai.difficulty.toUpperCase()})`;
+    } else if (r.mode === '2player') {
+      modeBadge.textContent = '2-Player 8-Ball';
+    } else {
+      modeBadge.textContent = 'Solo Practice';
+    }
 
     // Player Cards Active States
     const p1Card = document.getElementById('p1-card');
     const p2Card = document.getElementById('p2-card');
+    const p2Name = p2Card.querySelector('.player-name');
 
-    if (r.mode === '2player') {
+    if (p2Name) {
+      p2Name.textContent = r.mode === 'ai' ? `🤖 Bot (${this.ai.difficulty.toUpperCase()})` : 'Player 2';
+    }
+
+    if (r.mode === '2player' || r.mode === 'ai') {
       p2Card.style.display = 'flex';
       if (r.currentPlayer === 1) {
         p1Card.classList.add('active');
@@ -1206,12 +1465,15 @@ class Game {
     if (r.mode === 'practice') {
       statusMsg.textContent = 'Practice Mode';
       subMsg.textContent = 'Take your time & practice shots';
+    } else if (r.mode === 'ai' && r.currentPlayer === 2) {
+      statusMsg.textContent = `🤖 Computer is Thinking...`;
+      subMsg.textContent = `Calculating geometry & obstacle paths`;
     } else {
       if (r.isBreakShot) {
-        statusMsg.textContent = `Player ${r.currentPlayer} to Break`;
+        statusMsg.textContent = (r.mode === 'ai') ? 'Your Break!' : `Player ${r.currentPlayer} to Break`;
         subMsg.textContent = 'Aim & drag cue stick backward';
       } else {
-        statusMsg.textContent = `Player ${r.currentPlayer}'s Turn`;
+        statusMsg.textContent = (r.mode === 'ai') ? 'Your Turn' : `Player ${r.currentPlayer}'s Turn`;
         const activeSuit = r.currentPlayer === 1 ? r.p1Suit : r.p2Suit;
         if (r.tableOpen) {
           subMsg.textContent = 'Table is Open &mdash; Pocket any ball';
@@ -1296,7 +1558,11 @@ class Game {
     const p2Pots = document.getElementById('stat-p2-pots');
     const totalShots = document.getElementById('stat-shots');
 
-    title.textContent = `Player ${result.winner} Wins!`;
+    if (this.rules.mode === 'ai') {
+      title.textContent = result.winner === 2 ? '🤖 Computer Wins!' : '🏆 You Win!';
+    } else {
+      title.textContent = `Player ${result.winner} Wins!`;
+    }
     desc.textContent = result.message;
 
     p1Pots.textContent = this.rules.p1PottedCount;
